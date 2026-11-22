@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>홍길동 | 백엔드 개발자</title>
+  <style>
+    :root {
+      --text: #1f2933;
+      --muted: #616e7c;
+      --accent: #2563eb;
+      --bg: #ffffff;
+      --bg-alt: #f5f7fa;
+      --border: #e4e7eb;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.7;
+    }
+    .container { max-width: 860px; margin: 0 auto; padding: 0 24px; }
+    section { padding: 64px 0; }
+    section:nth-of-type(even) { background: var(--bg-alt); }
+    h2 { font-size: 1.5rem; margin-bottom: 24px; }
+    a { color: var(--accent); }
+
+    .hero { padding: 96px 0 80px; }
+    .hero h1 { font-size: 2.5rem; line-height: 1.3; }
+    .hero .role { font-size: 1.25rem; color: var(--accent); font-weight: 600; margin: 8px 0 16px; }
+    .hero p { color: var(--muted); max-width: 560px; }
+    .btn {
+      display: inline-block;
+      margin-top: 28px;
+      padding: 12px 28px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .btn:hover { opacity: 0.9; }
+
+    .skills { display: flex; flex-wrap: wrap; gap: 10px; list-style: none; }
+    .skills li {
+      padding: 6px 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 0.95rem;
+    }
+
+    .timeline { list-style: none; border-left: 2px solid var(--border); padding-left: 24px; }
+    .timeline li { position: relative; margin-bottom: 32px; }
+    .timeline li:last-child { margin-bottom: 0; }
+    .timeline li::before {
+      content: "";
+      position: absolute;
+      left: -31px;
+      top: 8px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+    .timeline h3 { font-size: 1.1rem; }
+    .period { color: var(--muted); font-size: 0.9rem; }
+
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+    .card {
+      padding: 24px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    .card h3 { font-size: 1.1rem; margin-bottom: 8px; }
+    .card p { color: var(--muted); font-size: 0.95rem; }
+    .card .result { color: var(--text); font-weight: 600; margin-top: 12px; }
+
+    .contact-list { list-style: none; }
+    .contact-list li { margin-bottom: 8px; }
+    .contact-list span { display: inline-block; width: 90px; color: var(--muted); }
+
+    footer { padding: 24px 0; text-align: center; color: var(--muted); font-size: 0.85rem; }
+
+    @media (max-width: 600px) {
+      .hero { padding: 64px 0 56px; }
+      .hero h1 { font-size: 2rem; }
+      section { padding: 48px 0; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="container">
+      <h1>안녕하세요, 홍길동입니다.</h1>
+      <div class="role">백엔드 개발자 · 6년차</div>
+      <p>대규모 트래픽을 안정적으로 처리하는 서버와 API를 설계합니다. 문제를 끝까지 파고들어 측정 가능한 개선을 만드는 것을 좋아합니다.</p>
+      <a class="btn" href="#contact">연락하기</a>
+    </div>
+  </header>
+
+  <main>
+    <section id="about">
+      <div class="container">
+        <h2>About</h2>
+        <p>Java/Spring 기반의 결제·주문 시스템을 주로 개발해 왔습니다. 레거시 시스템을 마이크로서비스로 전환하며 장애율을 낮추고 배포 주기를 단축한 경험이 있습니다. 코드 리뷰와 문서화를 통해 팀 전체의 생산성을 높이는 일에도 관심이 많습니다.</p>
+      </div>
+    </section>
+
+    <section id="skills">
+      <div class="container">
+        <h2>Skills</h2>
+        <ul class="skills">
+          <li>Java</li>
+          <li>Spring Boot</li>
+          <li>Kotlin</li>
+          <li>MySQL</li>
+          <li>Redis</li>
+          <li>Kafka</li>
+          <li>AWS</li>
+          <li>Docker</li>
+          <li>Kubernetes</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="experience">
+      <div class="container">
+        <h2>Experience</h2>
+        <ul class="timeline">
+          <li>
+            <h3>샘플커머스 · 시니어 백엔드 개발자</h3>
+            <div class="period">2023.03 – 현재</div>
+            <p>주문·결제 도메인 리드. 결제 API 응답 시간 40% 단축.</p>
+          </li>
+          <li>
+            <h3>예시테크 · 백엔드 개발자</h3>
+            <div class="period">2020.01 – 2023.02</div>
+            <p>모놀리식 서비스를 마이크로서비스로 전환, 월간 장애 건수 절반 감소.</p>
+          </li>
+          <li>
+            <h3>데모스타트업 · 주니어 개발자</h3>
+            <div class="period">2018.07 – 2019.12</div>
+            <p>사내 관리자 도구 및 REST API 개발.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="projects">
+      <div class="container">
+        <h2>Projects</h2>
+        <div class="cards">
+          <article class="card">
+            <h3>결제 시스템 재설계</h3>
+            <p>동기 호출 구조를 Kafka 기반 이벤트 구조로 전환.</p>
+            <p class="result">피크 시간 처리량 3배 증가</p>
+          </article>
+          <article class="card">
+            <h3>캐시 레이어 도입</h3>
+            <p>Redis 캐시로 상품 조회 API의 DB 부하 분산.</p>
+            <p class="result">DB CPU 사용률 60% → 25%</p>
+          </article>
+          <article class="card">
+            <h3>배포 파이프라인 자동화</h3>
+            <p>Kubernetes와 CI/CD 구성으로 무중단 배포 구현.</p>
+            <p class="result">배포 시간 1시간 → 10분</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="contact">
+      <div class="container">
+        <h2>Contact</h2>
+        <p>새로운 기회에 열려 있습니다. 편하게 연락 주세요.</p>
+        <ul class="contact-list" style="margin-top: 16px;">
+          <li><span>Email</span><a href="mailto:hong@example.com">hong@example.com</a></li>
+          <li><span>GitHub</span><a href="https://github.com/example">github.com/example</a></li>
+          <li><span>LinkedIn</span><a href="https://www.linkedin.com/in/example">linkedin.com/in/example</a></li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <footer>© 2026 홍길동</footer>
+</body>
+</html>
