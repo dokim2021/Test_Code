@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NE-PE-X 인계 체크</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* VOICE: 현장 점검표처럼 담담하고 정확하게.
+   IDEA: 차량 인수인계 점검 대장(검수 도장 칸이 있는 장부).
+   PICTURE: 60대 현황표 자체가 그림 — 단계 카드와 진행 막대.
+   COLOUR and TYPE: 흰 바탕, 짙은 남색 잉크, 검수 녹색·보완 적색 도장, IBM Plex Sans KR.
+   LAYOUT: 상단 단계 카드 → 검색 → 현황표, 상세는 그룹별 점검 행. */
+:root{color-scheme:light dark;
+  --bg:light-dark(#f5f6f8,#0f1620);--panel:light-dark(#fff,#18222e);--ink:light-dark(#14202e,#e6ebf1);
+  --mute:light-dark(#5b6675,#9aa6b4);--line:light-dark(#e2e6eb,#283545);--head:light-dark(#14202e,#0a1018);
+  --blue:light-dark(#1f5fd1,#6c9cf0);--ok:light-dark(#17703f,#5fd08f);--okbg:light-dark(#dff3e6,#163626);
+  --bad:light-dark(#b3261e,#ff8a80);--badbg:light-dark(#fde3e1,#3a1c1c);--wait:light-dark(#8a5a00,#f2c063);
+  --waitbg:light-dark(#fdf0d3,#3a2e14);--info:light-dark(#1d4ed8,#93b4ff);--infobg:light-dark(#dde7fd,#1c2a4a);
+  --gray:light-dark(#e7eaee,#263241)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "IBM Plex Sans KR",system-ui,"Malgun Gothic",sans-serif;overflow-x:clip}
+header{background:var(--head);color:#fff;padding:12px max(4vw,16px);display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+header a{color:#fff;font-weight:700;font-size:17px;text-decoration:none}
+header label{display:flex;gap:8px;align-items:center;font-size:14px}
+input,textarea{font:inherit;font-size:16px;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+header input{min-width:min(240px,60vw)}
+main{max-width:1240px;margin:0 auto;padding:20px max(4vw,16px) 60px}
+h1{font-size:clamp(22px,3vw,32px);line-height:1.1;margin:4px 0 14px;text-wrap:balance}
+h2{font-size:17px;margin:26px 0 8px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px}
+.card{background:var(--panel);border:2px solid transparent;border-radius:8px;padding:10px 12px;text-align:left;font:inherit;color:inherit;cursor:pointer;min-height:44px}
+.card.on{border-color:var(--blue)}.card b{display:block;font-size:26px;line-height:1.1}
+.card span{font-size:13px;color:var(--mute)}
+.tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:16px 0 8px}
+.tools input{flex:0 1 260px}
+.muted{color:var(--mute);font-size:13px}
+.scroll{overflow-x:auto;background:var(--panel);border-radius:8px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:13px;color:var(--mute);font-weight:600;white-space:nowrap}
+td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.go{cursor:pointer}tr.go:hover{background:light-dark(#f0f5ff,#1d2a3a)}
+.bar{height:6px;background:var(--gray);border-radius:3px;margin-top:4px;width:90px}.bar i{display:block;height:100%;background:var(--ok);border-radius:3px}
+.tag{display:inline-block;padding:2px 9px;border-radius:12px;font-size:12.5px;white-space:nowrap;background:var(--gray)}
+.s-installed,.s-verifying{background:var(--infobg);color:var(--info)}
+.s-verified,.s-confirming{background:var(--waitbg);color:var(--wait)}
+.s-confirmed,.s-ready{background:var(--okbg);color:var(--ok)}
+.s-rework{background:var(--badbg);color:var(--bad)}
+.s-handed_over{background:var(--ink);color:var(--bg)}
+button{font:inherit;font-size:14px;min-height:40px;padding:6px 12px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+button.p{background:var(--blue);border-color:var(--blue);color:#fff}
+button.x{color:var(--bad);border-color:var(--bad)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,input:focus-visible,.card:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+.act{display:flex;flex-wrap:wrap;gap:6px}.act input{flex:1 1 200px;font-size:15px}
+.top{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;background:var(--panel);padding:14px;border-radius:8px}
+details{margin-top:6px}summary{cursor:pointer}
+ol{margin:6px 0 0;padding-left:18px;font-size:13px}
+.reg{background:var(--panel);border-radius:8px;padding:12px 14px;margin-top:18px}
+.reg textarea{width:100%;min-height:54px}
+.note{background:var(--waitbg);color:var(--wait);padding:10px 12px;border-radius:8px;margin:0 0 12px}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;max-width:90vw}
+#toast.e{background:var(--bad);color:#fff}
+@media(max-width:600px){table{font-size:13px}.stack thead{display:none}.stack tr{display:grid;padding-block:10px}.stack td{display:flow-root;border:0;padding:3px 0;padding-inline-start:7em;text-align:start}.stack td::before{content:attr(data-l);float:inline-start;width:6.5em;margin-inline-start:-7em;white-space:normal;color:var(--mute)}.stack td:empty{display:none}}
+</style>
+<script>new MutationObserver(()=>{for(const c of document.querySelectorAll('.stack td:not([data-l])')){let i=0,p=c;while(p=p.previousElementSibling)i+=p.colSpan;c.dataset.l=c.closest('table').rows[0].cells[i]?.textContent||''}}).observe(document,{childList:true,subtree:true})</script>
+</head>
+<body>
+<header>
+  <a href="#">NE-PE-X 개조 차량 인계 체크</a>
+  <label>작업자 이름 <input id="me" placeholder="예: 모빌테크 홍길동" autocomplete="name"></label>
+</header>
+<main>
+  <p id="status" class="note" hidden></p>
+  <section id="dash">
+    <h1>개조 차량 60대 인계 현황</h1>
+    <div class="cards" id="cards"></div>
+    <div class="tools">
+      <input id="search" placeholder="차량 검색 (예: 12호차)">
+      <span class="muted" id="count"></span>
+    </div>
+    <div class="scroll"><table class="stack">
+      <thead><tr><th>차량</th><th>상태</th><th>진행</th><th>카메라</th><th>라이다</th><th>Thor</th><th>Orin</th><th>보완</th><th>인수</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+    <div class="reg">
+      <b>차량 등록</b>
+      <p class="muted">쉼표·줄바꿈으로 구분합니다. "1-60"처럼 입력하면 1호차~60호차를 등록합니다. 이미 있는 이름은 건너뜁니다.</p>
+      <textarea id="names" placeholder="1-60"></textarea>
+      <p><button class="p" id="register">등록</button> <span class="muted" id="regmsg"></span></p>
+    </div>
+  </section>
+  <section id="detail" hidden></section>
+</main>
+<div id="toast" hidden></div>
+<script>
+{
+const CHECKLIST=[
+  ...[1,2,3,4,5,6,7,8].map(i=>["camera",`카메라 ${i}`,true]),
+  ...[1,2,3,4,5,6,7,8].map(i=>["lidar",`라이다 ${i}`,true]),
+  ["thor","Thor 설치",true],["thor","Thor - 로깅 시스템",true],["thor","Thor - 알고리즘 동작",true],["thor","Thor - 센서 연결",true],
+  ["orin","Orin 설치",true],["orin","Orin - 뷰어",true],["orin","Orin - 로깅 애플리케이션",true],["orin","Orin - 업로더",true],
+  ["orin","Orin - 관제 시스템 (관제팀 담당)",false]];
+const STEPS={install:[["pending","rework"],"installed",null],verify:[["installed"],"verified","rework"],confirm:[["verified"],"confirmed","rework"]};
+const STAGE={installing:"설치 중",verifying:"확인 대기",confirming:"컨펌 대기",rework:"보완 필요",ready:"인수 대기",handed_over:"인수 완료"};
+const ITEM={pending:"미설치",installed:"설치 완료 · 확인 대기",verified:"확인 완료 · 컨펌 대기",confirmed:"컨펌 완료",rework:"보완 필요"};
+const STEPNAME={install:"설치",verify:"설치 확인",confirm:"재확인(컨펌)"};
+const GROUP={camera:"카메라 (8)",lidar:"라이다 (8)",thor:"Thor",orin:"Orin"};
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+const now=()=>{const d=new Date(),p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`};
+const tab=Math.random().toString(36).slice(2);
+let db=null,vehicles=[],filter="",armed=null;
+const drafts=new Map();
+
+try{$("me").value=localStorage.getItem("me")||""}catch(e){}
+$("me").addEventListener("input",()=>{try{localStorage.setItem("me",$("me").value.trim())}catch(e){}});
+
+function toast(m,err){const t=$("toast");t.textContent=m;t.className=err?"e":"";t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,3200)}
+function note(m){$("status").textContent=m||"";$("status").hidden=!m}
+function me(){const v=$("me").value.trim();if(!v){$("me").focus();throw new Error("상단에 작업자 이름을 먼저 입력하세요.")}return v}
+
+/* ---- 규칙 (서버 버전 app.py 와 동일) ---- */
+function stage(v){
+  const req=v.items.filter(i=>i.required);
+  if(v.handover_at)return"handed_over";
+  if(req.every(i=>i.state==="confirmed"))return"ready";
+  if(v.items.some(i=>i.state==="rework"))return"rework";
+  if(req.some(i=>i.state==="pending"))return"installing";
+  if(req.some(i=>i.state==="installed"))return"verifying";
+  return"confirming";
+}
+function applyStep(v,idx,step,result,person,memo){
+  memo=(memo||"").trim();
+  const it=v.items[idx];
+  if(v.handover_at)throw new Error("이미 인수 완료된 차량입니다.");
+  if(result==="fail"&&!memo)throw new Error("불합격 시 사유(메모)를 입력하세요.");
+  const [allowed,ok,bad]=STEPS[step];
+  if(!allowed.includes(it.state))throw new Error("다른 사람이 먼저 처리했습니다. 화면을 확인 후 다시 진행하세요.");
+  if(step!=="install"&&person===it.installed_by)throw new Error("설치자는 같은 항목을 확인/컨펌할 수 없습니다.");
+  if(step==="confirm"&&person===it.verified_by)throw new Error("확인자는 같은 항목을 컨펌할 수 없습니다.");
+  it.state=result==="pass"?ok:bad;
+  if(step==="install"){it.installed_by=person;it.verified_by=null}
+  if(step==="verify")it.verified_by=person;
+  it.events.push({step,result,person,memo,at:now()});
+}
+async function mutate(id,fn){
+  const ref=db.collection("vehicles").doc(id);
+  for(let t=0;t<10;t++){
+    const l=await ref.acquire({holder:tab,ttlMs:5000});
+    if(l.acquired){
+      const s=await ref.get();
+      if(!s.exists)throw new Error("차량을 찾을 수 없습니다.");
+      const v=structuredClone(s.data());
+      fn(v);
+      await ref.set(v);
+      return;
+    }
+    await new Promise(r=>setTimeout(r,300+Math.random()*300));
+  }
+  throw new Error("다른 사람이 저장 중입니다. 잠시 후 다시 시도하세요.");
+}
+
+/* ---- 현황판 ---- */
+function summary(v){
+  const g={};v.items.forEach(i=>{if(!i.required)return;const x=g[i.grp]||(g[i.grp]={d:0,t:0});x.t++;if(i.state==="confirmed")x.d++});
+  const req=v.items.filter(i=>i.required);
+  return{g,done:req.filter(i=>i.state==="confirmed").length,total:req.length,rework:v.items.filter(i=>i.state==="rework").length,stage:stage(v)};
+}
+function renderDash(){
+  const q=$("search").value.trim().toLowerCase();
+  const all=vehicles.map(v=>({v,s:summary(v)}));
+  const cnt={};all.forEach(x=>cnt[x.s.stage]=(cnt[x.s.stage]||0)+1);
+  const card=(k,l,n)=>`<button class="card ${filter===k?"on":""}" data-k="${k}"><span>${l}</span><b>${n}</b></button>`;
+  $("cards").innerHTML=card("","전체",all.length)+Object.entries(STAGE).map(([k,l])=>card(k,l,cnt[k]||0)).join("");
+  const shown=all.filter(x=>(!filter||x.s.stage===filter)&&(!q||x.v.name.toLowerCase().includes(q)));
+  $("count").textContent=`${shown.length}대 표시 · 숫자는 컨펌 완료 / 필수 항목`;
+  const gc=(s,k)=>{const x=s.g[k]||{d:0,t:0};return `<td class="n">${x.d}/${x.t}</td>`};
+  $("rows").innerHTML=shown.map(({v,s})=>`<tr class="go" data-id="${esc(v.id)}">
+    <td><b>${esc(v.name)}</b></td><td><span class="tag s-${s.stage}">${STAGE[s.stage]}</span></td>
+    <td class="n">${s.done}/${s.total}<div class="bar"><i style="width:${Math.round(s.done/s.total*100)}%"></i></div></td>
+    ${gc(s,"camera")}${gc(s,"lidar")}${gc(s,"thor")}${gc(s,"orin")}
+    <td>${s.rework?`<span class="tag s-rework">${s.rework}건</span>`:"-"}</td>
+    <td>${v.handover_at?`${esc(v.handover_by)}<div class="muted">${esc(v.handover_at)}</div>`:"-"}</td></tr>`).join("")
+    ||`<tr><td colspan="9" class="muted">${vehicles.length?"조건에 맞는 차량이 없습니다.":"등록된 차량이 없습니다. 아래에서 차량을 등록하세요."}</td></tr>`;
+}
+$("cards").addEventListener("click",e=>{const b=e.target.closest(".card");if(b){filter=b.dataset.k;renderDash()}});
+$("search").addEventListener("input",renderDash);
+$("rows").addEventListener("click",e=>{const tr=e.target.closest("tr.go");if(tr)location.hash=tr.dataset.id});
+
+$("register").addEventListener("click",async()=>{
+  if(!db)return toast("저장소에 연결되지 않았습니다.",true);
+  const raw=$("names").value.trim();const m=raw.match(/^(\d+)\s*[-~]\s*(\d+)$/);
+  let names;
+  if(m){const[a,b]=[+m[1],+m[2]].sort((x,y)=>x-y);if(b-a>199)return toast("한 번에 200대까지 등록할 수 있습니다.",true);names=Array.from({length:b-a+1},(_,i)=>`${a+i}호차`)}
+  else names=raw.split(/[,\n]/).map(s=>s.trim()).filter(Boolean);
+  names=[...new Set(names)];
+  if(!names.length)return toast("등록할 차량 이름을 입력하세요.",true);
+  const have=new Set(vehicles.map(v=>v.name));
+  const todo=names.filter(n=>!have.has(n));
+  let order=vehicles.reduce((x,v)=>Math.max(x,v.order||0),0);
+  $("register").disabled=true;
+  let made=0;
+  try{
+    for(const name of todo){
+      order++;
+      const id="v"+String(order).padStart(4,"0");
+      const doc={name,order,created_at:now(),handover_by:null,handover_at:null,
+        items:CHECKLIST.map(([grp,n,req])=>({grp,name:n,required:req,state:"pending",installed_by:null,verified_by:null,events:[]}))};
+      for(let t=0;;t++){
+        try{await db.collection("vehicles").doc(id).set(doc);break}
+        catch(e){if((e.code==="resource_exhausted"||e.code==="unavailable")&&t<5){await new Promise(r=>setTimeout(r,1000*(t+1)));continue}throw e}
+      }
+      made++;$("regmsg").textContent=`${made}/${todo.length} 등록 중…`;
+    }
+    toast(`${made}대 등록`+(names.length-todo.length?`, ${names.length-todo.length}대 중복 건너뜀`:""));
+    $("names").value="";
+  }catch(e){toast(`${made}대 등록 후 중단: ${e.message||e.code}`,true)}
+  finally{$("register").disabled=false;$("regmsg").textContent=""}
+});
+
+/* ---- 차량 상세 ---- */
+function actions(v,i,idx){
+  const key=`${v.id}:${idx}`;
+  const memo=`<input data-memo="${key}" value="${esc(drafts.get(key)||"")}" placeholder="메모 (버전·확인 내용, 불합격 시 사유 필수)">`;
+  const b=(step,res,l,c)=>`<button class="${c}" data-idx="${idx}" data-step="${step}" data-res="${res}">${l}</button>`;
+  if(i.state==="pending"||i.state==="rework")return memo+b("install","pass",i.state==="rework"?"재설치 완료":"설치 완료","p");
+  if(i.state==="installed")return memo+b("verify","pass","확인 합격","p")+b("verify","fail","확인 불합격","x");
+  if(i.state==="verified")return memo+b("confirm","pass","컨펌 합격","p")+b("confirm","fail","컨펌 불합격","x");
+  return"";
+}
+function renderDetail(id){
+  const v=vehicles.find(x=>x.id===id);const el=$("detail");
+  if(!v){el.innerHTML=`<p><a href="#">← 전체 현황</a></p><p class="muted">${db?"차량을 찾을 수 없습니다.":"불러오는 중…"}</p>`;return}
+  const s=summary(v),locked=s.stage==="handed_over";
+  const open=new Set([...el.querySelectorAll("details[open]")].map(d=>d.dataset.k));
+  const groups={};v.items.forEach((it,idx)=>(groups[it.grp]||(groups[it.grp]=[])).push([it,idx]));
+  el.innerHTML=`<p><a href="#">← 전체 현황</a></p>
+  <div class="top"><div><h1 style="margin:0 0 4px">${esc(v.name)} <span class="tag s-${s.stage}">${STAGE[s.stage]}</span></h1>
+    <span class="muted">필수 ${s.done}/${s.total} 컨펌 완료${s.rework?` · 보완 필요 ${s.rework}건`:""}</span></div>
+    <div>${locked?`인수 완료: ${esc(v.handover_by)} <span class="muted">${esc(v.handover_at)}</span>`
+      :`<button class="p" id="handover" ${s.stage==="ready"?"":"disabled"}>${armed===v.id?"한 번 더 눌러 인수 확정":"우리 팀 인수 완료"}</button>`}</div></div>
+  <p class="muted">진행 순서: 설치 → 설치 확인 → 재확인(컨펌). 같은 항목의 설치자·확인자·컨펌자는 서로 달라야 합니다. 불합격이면 '보완 필요'로 돌아가 재설치부터 다시 진행합니다. 인수는 필수 항목이 모두 컨펌된 뒤에만 가능합니다.</p>
+  ${Object.entries(groups).map(([g,list])=>`<h2>${GROUP[g]||esc(g)}</h2>
+  <div class="scroll"><table class="stack"><thead><tr><th>항목</th><th>상태</th><th>설치자 / 확인자</th><th>진행</th></tr></thead><tbody>
+  ${list.map(([it,idx])=>`<tr><td>${esc(it.name)}${it.required?"":` <span class="tag">인계 필수 아님</span>`}</td>
+    <td><span class="tag s-${it.state}">${ITEM[it.state]}</span></td>
+    <td>${esc(it.installed_by||"-")} / ${esc(it.verified_by||"-")}</td>
+    <td>${locked?"":`<div class="act">${actions(v,it,idx)}</div>`}
+      ${it.events.length?`<details data-k="${idx}" ${open.has(String(idx))?"open":""}><summary class="muted">이력 ${it.events.length}건</summary><ol>${it.events.map(e=>
+        `<li>${esc(e.at)} · ${STEPNAME[e.step]||esc(e.step)} ${e.result==="pass"?"합격":"<b>불합격</b>"} · ${esc(e.person)}${e.memo?` · ${esc(e.memo)}`:""}</li>`).join("")}</ol></details>`:""}</td></tr>`).join("")}
+  </tbody></table></div>`).join("")}`;
+}
+$("detail").addEventListener("input",e=>{const k=e.target.dataset.memo;if(k)drafts.set(k,e.target.value)});
+$("detail").addEventListener("click",async e=>{
+  const id=location.hash.slice(1);
+  const b=e.target.closest("button");if(!b||!db)return;
+  try{
+    const person=me();
+    if(b.id==="handover"){
+      if(armed!==id){armed=id;renderDetail(id);return}
+      armed=null;b.disabled=true;
+      await mutate(id,v=>{if(v.handover_at)throw new Error("이미 인수 완료된 차량입니다.");if(stage(v)!=="ready")throw new Error("필수 항목이 모두 컨펌되어야 인수할 수 있습니다.");v.handover_by=person;v.handover_at=now()});
+      return toast("인수 완료 처리되었습니다.");
+    }
+    if(!b.dataset.step)return;
+    const idx=+b.dataset.idx,key=`${id}:${idx}`;
+    b.disabled=true;
+    await mutate(id,v=>applyStep(v,idx,b.dataset.step,b.dataset.res,person,drafts.get(key)));
+    drafts.delete(key);toast("기록되었습니다.");
+  }catch(err){b.disabled=false;toast(err.message||err.code||"저장 실패",true)}
+});
+
+/* ---- 라우팅 · 연결 ---- */
+function route(){
+  const id=location.hash.slice(1);
+  $("dash").hidden=!!id;$("detail").hidden=!id;
+  if(id){armed=null;renderDetail(id);scrollTo(0,0)}else renderDash();
+}
+function render(){const id=location.hash.slice(1);id?renderDetail(id):renderDash()}
+addEventListener("hashchange",route);
+route();
+
+(async()=>{
+  db=await claude.use("db");
+  if(!db){note("공유 저장소에 연결할 수 없습니다. claude.ai에 로그인한 상태로 열어 주세요.");return}
+  const timer=setTimeout(()=>note("데이터를 아직 불러오지 못했습니다. 네트워크를 확인하세요."),10000);
+  db.collection("vehicles").orderBy("order").onSnapshot(snap=>{
+    if(!snap.metadata.fromCache){clearTimeout(timer);note("")}
+    vehicles=snap.docs.map(d=>({id:d.id,...d.data()})).filter(v=>Array.isArray(v.items));
+    render();
+  },err=>{clearTimeout(timer);note(err.code==="revoked"?"접근 권한이 변경되었습니다.":"데이터 연결이 끊겼습니다. 페이지를 다시 열어 주세요.")});
+})();
+}
+</script>
+</body>
+</html>
