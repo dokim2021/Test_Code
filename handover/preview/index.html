@@ -48,7 +48,7 @@ tr.go{cursor:pointer}tr.go:hover{background:light-dark(#f0f5ff,#1d2a3a)}
 .s-installed,.s-verifying{background:var(--infobg);color:var(--info)}
 .s-verified,.s-confirming{background:var(--waitbg);color:var(--wait)}
 .s-confirmed,.s-ready{background:var(--okbg);color:var(--ok)}
-.s-rework{background:var(--badbg);color:var(--bad)}
+.s-rework,.s-broken{background:var(--badbg);color:var(--bad)}
 .s-handed_over{background:var(--ink);color:var(--bg)}
 button{font:inherit;font-size:14px;min-height:40px;padding:6px 12px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
 button.p{background:var(--blue);border-color:var(--blue);color:#fff}
@@ -83,7 +83,7 @@ ol{margin:6px 0 0;padding-left:18px;font-size:13px}
       <span class="muted" id="count"></span>
     </div>
     <div class="scroll"><table class="stack">
-      <thead><tr><th>차량</th><th>상태</th><th>진행</th><th>카메라</th><th>라이다</th><th>Thor</th><th>Orin</th><th>보완</th><th>인수</th></tr></thead>
+      <thead><tr><th>차량</th><th>상태</th><th>진행</th><th>카메라</th><th>라이다</th><th>Thor</th><th>Orin</th><th>재개조</th><th>광주 출고</th></tr></thead>
       <tbody id="rows"></tbody>
     </table></div>
     <div class="reg">
@@ -105,9 +105,10 @@ const CHECKLIST=[
   ["orin","Orin 설치",true],["orin","Orin - 뷰어",true],["orin","Orin - 로깅 애플리케이션",true],["orin","Orin - 업로더",true],
   ["orin","Orin - 관제 시스템 (관제팀 담당)",false]];
 const STEPS={install:[["pending","rework"],"installed",null],verify:[["installed"],"verified","rework"],confirm:[["verified"],"confirmed","rework"]};
-const STAGE={installing:"설치 중",verifying:"확인 대기",confirming:"컨펌 대기",rework:"보완 필요",ready:"인수 대기",handed_over:"인수 완료"};
+const STAGE={installing:"개조 중",verifying:"점검: 확인 대기",confirming:"점검: 컨펌 대기",rework:"재개조 필요",ready:"출고 대기",handed_over:"광주 출고",broken:"고장"};
+const HISTORY={release:"광주 출고",fault:"고장 등록",recheck:"점검 시작"};
 const ITEM={pending:"미설치",installed:"설치 완료 · 확인 대기",verified:"확인 완료 · 컨펌 대기",confirmed:"컨펌 완료",rework:"보완 필요"};
-const STEPNAME={install:"설치",verify:"설치 확인",confirm:"재확인(컨펌)"};
+const STEPNAME={install:"설치",verify:"설치 확인",confirm:"재확인(컨펌)",recheck:"고장 재점검"};
 const GROUP={camera:"카메라 (8)",lidar:"라이다 (8)",thor:"Thor",orin:"Orin"};
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
@@ -126,6 +127,7 @@ function me(){const v=$("me").value.trim();if(!v){$("me").focus();throw new Erro
 /* ---- 규칙 (서버 버전 app.py 와 동일) ---- */
 function stage(v){
   const req=v.items.filter(i=>i.required);
+  if(v.fault_at)return"broken";
   if(v.handover_at)return"handed_over";
   if(req.every(i=>i.state==="confirmed"))return"ready";
   if(v.items.some(i=>i.state==="rework"))return"rework";
@@ -136,7 +138,8 @@ function stage(v){
 function applyStep(v,idx,step,result,person,memo){
   memo=(memo||"").trim();
   const it=v.items[idx];
-  if(v.handover_at)throw new Error("이미 인수 완료된 차량입니다.");
+  if(v.handover_at)throw new Error("이미 광주 출고된 차량입니다.");
+  if(v.fault_at)throw new Error("고장 상태입니다. 먼저 점검을 시작하세요.");
   if(result==="fail"&&!memo)throw new Error("불합격 시 사유(메모)를 입력하세요.");
   const [allowed,ok,bad]=STEPS[step];
   if(!allowed.includes(it.state))throw new Error("다른 사람이 먼저 처리했습니다. 화면을 확인 후 다시 진행하세요.");
@@ -180,7 +183,7 @@ function renderDash(){
   $("count").textContent=`${shown.length}대 표시 · 숫자는 컨펌 완료 / 필수 항목`;
   const gc=(s,k)=>{const x=s.g[k]||{d:0,t:0};return `<td class="n">${x.d}/${x.t}</td>`};
   $("rows").innerHTML=shown.map(({v,s})=>`<tr class="go" data-id="${esc(v.id)}">
-    <td><b>${esc(v.name)}</b></td><td><span class="tag s-${s.stage}">${STAGE[s.stage]}</span></td>
+    <td><b>${esc(v.name)}</b>${(v.cycle||1)>1?` <span class="muted">${v.cycle}회차</span>`:""}</td><td><span class="tag s-${s.stage}">${STAGE[s.stage]}</span></td>
     <td class="n">${s.done}/${s.total}<div class="bar"><i style="width:${Math.round(s.done/s.total*100)}%"></i></div></td>
     ${gc(s,"camera")}${gc(s,"lidar")}${gc(s,"thor")}${gc(s,"orin")}
     <td>${s.rework?`<span class="tag s-rework">${s.rework}건</span>`:"-"}</td>
@@ -208,7 +211,7 @@ $("register").addEventListener("click",async()=>{
     for(const name of todo){
       order++;
       const id="v"+String(order).padStart(4,"0");
-      const doc={name,order,created_at:now(),handover_by:null,handover_at:null,
+      const doc={name,order,created_at:now(),handover_by:null,handover_at:null,cycle:1,fault_by:null,fault_at:null,fault_reason:null,history:[],
         items:CHECKLIST.map(([grp,n,req])=>({grp,name:n,required:req,state:"pending",installed_by:null,verified_by:null,events:[]}))};
       for(let t=0;;t++){
         try{await db.collection("vehicles").doc(id).set(doc);break}
@@ -235,36 +238,68 @@ function actions(v,i,idx){
 function renderDetail(id){
   const v=vehicles.find(x=>x.id===id);const el=$("detail");
   if(!v){el.innerHTML=`<p><a href="#">← 전체 현황</a></p><p class="muted">${db?"차량을 찾을 수 없습니다.":"불러오는 중…"}</p>`;return}
-  const s=summary(v),locked=s.stage==="handed_over";
+  const s=summary(v),locked=s.stage==="handed_over"||s.stage==="broken",picking=s.stage==="broken",cyc=v.cycle||1;
   const open=new Set([...el.querySelectorAll("details[open]")].map(d=>d.dataset.k));
   const groups={};v.items.forEach((it,idx)=>(groups[it.grp]||(groups[it.grp]=[])).push([it,idx]));
   el.innerHTML=`<p><a href="#">← 전체 현황</a></p>
   <div class="top"><div><h1 style="margin:0 0 4px">${esc(v.name)} <span class="tag s-${s.stage}">${STAGE[s.stage]}</span></h1>
-    <span class="muted">필수 ${s.done}/${s.total} 컨펌 완료${s.rework?` · 보완 필요 ${s.rework}건`:""}</span></div>
-    <div>${locked?`인수 완료: ${esc(v.handover_by)} <span class="muted">${esc(v.handover_at)}</span>`
-      :`<button class="p" id="handover" ${s.stage==="ready"?"":"disabled"}>${armed===v.id?"한 번 더 눌러 인수 확정":"우리 팀 인수 완료"}</button>`}</div></div>
-  <p class="muted">진행 순서: 설치 → 설치 확인 → 재확인(컨펌). 같은 항목의 설치자·확인자·컨펌자는 서로 달라야 합니다. 불합격이면 '보완 필요'로 돌아가 재설치부터 다시 진행합니다. 인수는 필수 항목이 모두 컨펌된 뒤에만 가능합니다.</p>
+    <span class="muted">${cyc}회차 · 필수 ${s.done}/${s.total} 컨펌 완료${s.rework?` · 재개조 필요 ${s.rework}건`:""}</span></div>
+    <div class="act">${s.stage==="handed_over"
+      ?`<span>광주 출고: ${esc(v.handover_by)} <span class="muted">${esc(v.handover_at)}</span></span>
+        <input id="fault-reason" value="${esc(drafts.get(v.id+":fault")||"")}" placeholder="고장 내용 (필수)"><button class="x" id="fault">고장 등록</button>`
+      :s.stage==="broken"
+      ?`<span><b>고장</b>: ${esc(v.fault_reason)} <span class="muted">${esc(v.fault_by)} · ${esc(v.fault_at)}</span></span>`
+      :`<button class="p" id="handover" ${s.stage==="ready"?"":"disabled"}>${armed===v.id?"한 번 더 눌러 출고 확정":"광주 출고 (우리 팀 인수)"}</button>`}</div></div>
+  ${picking?`<div class="top" style="margin-top:12px"><span>다시 점검할 항목을 선택한 뒤 점검을 시작하세요. 선택한 항목만 '확인 대기'로 돌아갑니다.</span>
+    <span class="act"><button id="pick-all">전체 선택</button><button class="p" id="recheck">점검 시작</button></span></div>`:""}
+  <p class="muted">사이클: 개조(설치) → 개조 점검(설치 확인 → 재확인·컨펌) → 광주 출고 → 고장 시 다시 점검 → 불합격이면 재개조. 같은 항목의 설치자·확인자·컨펌자는 서로 달라야 하고, 불합격은 사유가 필요합니다.</p>
   ${Object.entries(groups).map(([g,list])=>`<h2>${GROUP[g]||esc(g)}</h2>
   <div class="scroll"><table class="stack"><thead><tr><th>항목</th><th>상태</th><th>설치자 / 확인자</th><th>진행</th></tr></thead><tbody>
-  ${list.map(([it,idx])=>`<tr><td>${esc(it.name)}${it.required?"":` <span class="tag">인계 필수 아님</span>`}</td>
+  ${list.map(([it,idx])=>`<tr><td>${picking&&it.state==="confirmed"?`<input type="checkbox" class="pick" value="${idx}"> `:""}${esc(it.name)}${it.required?"":` <span class="tag">인계 필수 아님</span>`}</td>
     <td><span class="tag s-${it.state}">${ITEM[it.state]}</span></td>
     <td>${esc(it.installed_by||"-")} / ${esc(it.verified_by||"-")}</td>
     <td>${locked?"":`<div class="act">${actions(v,it,idx)}</div>`}
       ${it.events.length?`<details data-k="${idx}" ${open.has(String(idx))?"open":""}><summary class="muted">이력 ${it.events.length}건</summary><ol>${it.events.map(e=>
         `<li>${esc(e.at)} · ${STEPNAME[e.step]||esc(e.step)} ${e.result==="pass"?"합격":"<b>불합격</b>"} · ${esc(e.person)}${e.memo?` · ${esc(e.memo)}`:""}</li>`).join("")}</ol></details>`:""}</td></tr>`).join("")}
-  </tbody></table></div>`).join("")}`;
+  </tbody></table></div>`).join("")}
+  ${(v.history||[]).length?`<h2>차량 이력</h2><ol style="font-size:14px">${v.history.map(h=>
+    `<li>${esc(h.at)} · ${esc(h.cycle)}회차 · <b>${HISTORY[h.kind]||esc(h.kind)}</b> · ${esc(h.person)}${h.memo?` · ${esc(h.memo)}`:""}</li>`).join("")}</ol>`:""}`;
 }
-$("detail").addEventListener("input",e=>{const k=e.target.dataset.memo;if(k)drafts.set(k,e.target.value)});
+$("detail").addEventListener("input",e=>{const k=e.target.dataset.memo;if(k)drafts.set(k,e.target.value);if(e.target.id==="fault-reason")drafts.set(location.hash.slice(1)+":fault",e.target.value)});
 $("detail").addEventListener("click",async e=>{
   const id=location.hash.slice(1);
   const b=e.target.closest("button");if(!b||!db)return;
+  if(b.id==="pick-all"){const bx=[...$("detail").querySelectorAll("input.pick")],on=!bx.every(x=>x.checked);bx.forEach(x=>x.checked=on);return}
   try{
     const person=me();
+    if(b.id==="fault"){
+      const reason=(drafts.get(id+":fault")||"").trim();
+      if(!reason)throw new Error("고장 내용을 입력하세요.");
+      b.disabled=true;
+      await mutate(id,v=>{if(stage(v)!=="handed_over")throw new Error("광주 출고된 차량만 고장 등록할 수 있습니다.");
+        const at=now();v.handover_by=null;v.handover_at=null;v.fault_by=person;v.fault_at=at;v.fault_reason=reason;
+        (v.history||(v.history=[])).push({kind:"fault",person,memo:reason,cycle:v.cycle||1,at})});
+      drafts.delete(id+":fault");return toast("고장이 등록되었습니다.");
+    }
+    if(b.id==="recheck"){
+      const picks=[...$("detail").querySelectorAll("input.pick:checked")].map(x=>+x.value);
+      if(!picks.length)throw new Error("다시 점검할 항목을 하나 이상 선택하세요.");
+      b.disabled=true;let cyc;
+      await mutate(id,v=>{if(stage(v)!=="broken")throw new Error("고장 상태인 차량만 점검을 시작할 수 있습니다.");
+        if(picks.some(i=>!v.items[i]||v.items[i].state!=="confirmed"))throw new Error("컨펌 완료된 항목만 다시 점검할 수 있습니다.");
+        const at=now();cyc=(v.cycle||1)+1;
+        for(const i of picks){const it=v.items[i];it.state="installed";it.verified_by=null;
+          it.events.push({step:"recheck",result:"pass",person,memo:`${cyc}회차 재점검 (고장: ${v.fault_reason})`,at})}
+        (v.history||(v.history=[])).push({kind:"recheck",person,memo:`${picks.length}개 항목: ${picks.map(i=>v.items[i].name).join(", ")}`,cycle:cyc,at});
+        v.cycle=cyc;v.fault_by=null;v.fault_at=null;v.fault_reason=null});
+      return toast(`${cyc}회차 점검을 시작했습니다.`);
+    }
     if(b.id==="handover"){
       if(armed!==id){armed=id;renderDetail(id);return}
       armed=null;b.disabled=true;
-      await mutate(id,v=>{if(v.handover_at)throw new Error("이미 인수 완료된 차량입니다.");if(stage(v)!=="ready")throw new Error("필수 항목이 모두 컨펌되어야 인수할 수 있습니다.");v.handover_by=person;v.handover_at=now()});
-      return toast("인수 완료 처리되었습니다.");
+      await mutate(id,v=>{if(v.handover_at)throw new Error("이미 광주 출고된 차량입니다.");if(stage(v)!=="ready")throw new Error("필수 항목이 모두 컨펌되어야 출고할 수 있습니다.");
+        const at=now();v.handover_by=person;v.handover_at=at;(v.history||(v.history=[])).push({kind:"release",person,memo:"",cycle:v.cycle||1,at})});
+      return toast("광주 출고 처리되었습니다.");
     }
     if(!b.dataset.step)return;
     const idx=+b.dataset.idx,key=`${id}:${idx}`;

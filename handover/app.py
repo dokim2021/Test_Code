@@ -48,7 +48,20 @@ CREATE TABLE IF NOT EXISTS vehicles (
     name TEXT UNIQUE NOT NULL,
     created_at TEXT NOT NULL,
     handover_by TEXT,
-    handover_at TEXT
+    handover_at TEXT,
+    fault_by TEXT,
+    fault_at TEXT,
+    fault_reason TEXT,
+    cycle INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS vehicle_events (
+    id INTEGER PRIMARY KEY,
+    vehicle_id INTEGER NOT NULL REFERENCES vehicles(id),
+    kind TEXT NOT NULL,
+    person TEXT NOT NULL,
+    memo TEXT NOT NULL DEFAULT '',
+    cycle INTEGER NOT NULL,
+    created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS items (
     id INTEGER PRIMARY KEY,
@@ -73,7 +86,16 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_items_vehicle ON items(vehicle_id);
 CREATE INDEX IF NOT EXISTS idx_events_item ON events(item_id);
+CREATE INDEX IF NOT EXISTS idx_vehicle_events ON vehicle_events(vehicle_id);
 """
+
+# 이전 버전 DB 에 없는 컬럼
+MIGRATIONS = {
+    "fault_by": "ALTER TABLE vehicles ADD COLUMN fault_by TEXT",
+    "fault_at": "ALTER TABLE vehicles ADD COLUMN fault_at TEXT",
+    "fault_reason": "ALTER TABLE vehicles ADD COLUMN fault_reason TEXT",
+    "cycle": "ALTER TABLE vehicles ADD COLUMN cycle INTEGER NOT NULL DEFAULT 1",
+}
 
 
 class StepError(ValueError):
@@ -97,6 +119,10 @@ def connect(db_path):
 
 def init_db(db_path):
     with contextlib.closing(connect(db_path)) as conn:
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(vehicles)")}
+        for col, sql in MIGRATIONS.items():
+            if cols and col not in cols:
+                conn.execute(sql)
         conn.executescript(SCHEMA)
 
 
@@ -123,8 +149,10 @@ def create_vehicles(conn, names):
     return {"created": created, "skipped": skipped}
 
 
-def vehicle_stage(items, handed_over):
+def vehicle_stage(items, handed_over, broken=False):
     required = [i for i in items if i["required"]]
+    if broken:
+        return "broken"
     if handed_over:
         return "handed_over"
     if all(i["state"] == "confirmed" for i in required):
@@ -151,7 +179,13 @@ def _summary(vehicle, items):
         "name": vehicle["name"],
         "handover_by": vehicle["handover_by"],
         "handover_at": vehicle["handover_at"],
-        "stage": vehicle_stage(items, vehicle["handover_at"] is not None),
+        "fault_by": vehicle["fault_by"],
+        "fault_at": vehicle["fault_at"],
+        "fault_reason": vehicle["fault_reason"],
+        "cycle": vehicle["cycle"],
+        "stage": vehicle_stage(
+            items, vehicle["handover_at"] is not None, vehicle["fault_at"] is not None
+        ),
         "confirmed": sum(i["state"] == "confirmed" for i in required),
         "required": len(required),
         "rework": sum(i["state"] == "rework" for i in items),
@@ -188,7 +222,21 @@ def get_vehicle(conn, vehicle_id):
         i["events"] = events.get(i["id"], [])
     result = _summary(vehicle, items)
     result["items"] = items
+    result["history"] = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM vehicle_events WHERE vehicle_id = ? ORDER BY id", (vehicle_id,)
+        )
+    ]
     return result
+
+
+def _log_vehicle(conn, vehicle_id, kind, person, memo, cycle, ts):
+    conn.execute(
+        "INSERT INTO vehicle_events (vehicle_id, kind, person, memo, cycle, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (vehicle_id, kind, person, memo, cycle, ts),
+    )
 
 
 def apply_step(conn, item_id, step, result, person, memo=""):
@@ -207,14 +255,17 @@ def apply_step(conn, item_id, step, result, person, memo=""):
         raise StepError("불합격 시 사유(메모)를 입력하세요.")
 
     item = conn.execute(
-        "SELECT i.*, v.handover_at FROM items i JOIN vehicles v ON v.id = i.vehicle_id"
+        "SELECT i.*, v.handover_at, v.fault_at FROM items i"
+        " JOIN vehicles v ON v.id = i.vehicle_id"
         " WHERE i.id = ?",
         (item_id,),
     ).fetchone()
     if item is None:
         raise NotFound("항목을 찾을 수 없습니다.")
     if item["handover_at"]:
-        raise StepError("이미 인수 완료된 차량입니다.")
+        raise StepError("이미 광주 출고된 차량입니다.")
+    if item["fault_at"]:
+        raise StepError("고장 상태입니다. 먼저 점검을 시작하세요.")
 
     allowed, pass_state, fail_state = STEPS[step]
     if item["state"] not in allowed:
@@ -251,20 +302,84 @@ def apply_step(conn, item_id, step, result, person, memo=""):
 
 
 def handover(conn, vehicle_id, person):
-    """우리 팀 인수 완료 처리. 필수 항목이 모두 컨펌되어야 한다."""
+    """광주 출고(우리 팀 인수) 처리. 필수 항목이 모두 컨펌되어야 한다."""
     person = (person or "").strip()
     if not person:
         raise StepError("인수자 이름을 입력하세요.")
     vehicle = get_vehicle(conn, vehicle_id)
     if vehicle["stage"] == "handed_over":
-        raise StepError("이미 인수 완료된 차량입니다.")
+        raise StepError("이미 광주 출고된 차량입니다.")
     if vehicle["stage"] != "ready":
-        raise StepError("필수 항목이 모두 컨펌되어야 인수할 수 있습니다.")
+        raise StepError("필수 항목이 모두 컨펌되어야 출고할 수 있습니다.")
+    ts = now()
     conn.execute(
         "UPDATE vehicles SET handover_by = ?, handover_at = ? WHERE id = ?",
-        (person, now(), vehicle_id),
+        (person, ts, vehicle_id),
     )
+    _log_vehicle(conn, vehicle_id, "release", person, "", vehicle["cycle"], ts)
     return {"stage": "handed_over"}
+
+
+def report_fault(conn, vehicle_id, person, reason):
+    """광주 출고된 차량의 고장 등록. 차량은 '고장' 상태가 된다."""
+    person = (person or "").strip()
+    reason = (reason or "").strip()
+    if not person:
+        raise StepError("작업자 이름을 입력하세요.")
+    if not reason:
+        raise StepError("고장 내용을 입력하세요.")
+    vehicle = get_vehicle(conn, vehicle_id)
+    if vehicle["stage"] != "handed_over":
+        raise StepError("광주 출고된 차량만 고장 등록할 수 있습니다.")
+    ts = now()
+    conn.execute(
+        "UPDATE vehicles SET handover_by = NULL, handover_at = NULL,"
+        " fault_by = ?, fault_at = ?, fault_reason = ? WHERE id = ?",
+        (person, ts, reason, vehicle_id),
+    )
+    _log_vehicle(conn, vehicle_id, "fault", person, reason, vehicle["cycle"], ts)
+    return {"stage": "broken"}
+
+
+def start_recheck(conn, vehicle_id, person, item_ids):
+    """고장 차량의 점검 시작. 선택한 항목을 '확인 대기'로 되돌리고 회차를 올린다."""
+    person = (person or "").strip()
+    if not person:
+        raise StepError("작업자 이름을 입력하세요.")
+    vehicle = get_vehicle(conn, vehicle_id)
+    if vehicle["stage"] != "broken":
+        raise StepError("고장 상태인 차량만 점검을 시작할 수 있습니다.")
+    if not isinstance(item_ids, list) or not item_ids:
+        raise StepError("다시 점검할 항목을 하나 이상 선택하세요.")
+    by_id = {i["id"]: i for i in vehicle["items"]}
+    try:
+        chosen = [by_id[int(x)] for x in dict.fromkeys(item_ids)]
+    except (KeyError, TypeError, ValueError):
+        raise StepError("이 차량의 항목이 아닙니다.")
+    if any(i["state"] != "confirmed" for i in chosen):
+        raise StepError("컨펌 완료된 항목만 다시 점검할 수 있습니다.")
+    ts = now()
+    cycle = vehicle["cycle"] + 1
+    reason = vehicle["fault_reason"] or ""
+    for i in chosen:
+        conn.execute(
+            "UPDATE items SET state = 'installed', verified_by = NULL, updated_at = ?"
+            " WHERE id = ?",
+            (ts, i["id"]),
+        )
+        conn.execute(
+            "INSERT INTO events (item_id, step, result, person, memo, created_at)"
+            " VALUES (?, 'recheck', 'pass', ?, ?, ?)",
+            (i["id"], person, f"{cycle}회차 재점검 (고장: {reason})", ts),
+        )
+    conn.execute(
+        "UPDATE vehicles SET fault_by = NULL, fault_at = NULL, fault_reason = NULL,"
+        " cycle = ? WHERE id = ?",
+        (cycle, vehicle_id),
+    )
+    names = ", ".join(i["name"] for i in chosen)
+    _log_vehicle(conn, vehicle_id, "recheck", person, f"{len(chosen)}개 항목: {names}", cycle, ts)
+    return {"stage": "verifying", "cycle": cycle}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -346,6 +461,20 @@ class Handler(BaseHTTPRequestHandler):
         if m:
             return self._run(
                 lambda c: handover(c, int(m.group(1)), body.get("person")), write=True
+            )
+        m = re.fullmatch(r"/api/vehicles/(\d+)/fault", path)
+        if m:
+            return self._run(
+                lambda c: report_fault(c, int(m.group(1)), body.get("person"), body.get("reason")),
+                write=True,
+            )
+        m = re.fullmatch(r"/api/vehicles/(\d+)/recheck", path)
+        if m:
+            return self._run(
+                lambda c: start_recheck(
+                    c, int(m.group(1)), body.get("person"), body.get("item_ids")
+                ),
+                write=True,
             )
         self._send(404, {"error": "not found"})
 

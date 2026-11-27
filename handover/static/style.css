@@ -22,7 +22,7 @@ tr.link:hover { background: #f0f5ff; }
 .s-installed, .s-verifying { background: #dbeafe; color: #1e40af; }
 .s-verified, .s-confirming { background: #fef3c7; color: #92400e; }
 .s-confirmed, .s-ready { background: #dcfce7; color: #166534; }
-.s-rework { background: #fee2e2; color: #991b1b; }
+.s-rework, .s-broken { background: #fee2e2; color: #991b1b; }
 .s-handed_over { background: #1f2937; color: #fff; }
 .opt { background: #f3f4f6; color: #6b7280; }
 button { padding: 6px 10px; border: 1px solid #ccd; border-radius: 4px; background: #fff; cursor: pointer; font: inherit; }

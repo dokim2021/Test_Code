@@ -10,7 +10,7 @@ from pathlib import Path
 import app
 
 
-class LogicTest(unittest.TestCase):
+class _Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.db = str(Path(self.tmp.name) / "t.db")
@@ -34,6 +34,9 @@ class LogicTest(unittest.TestCase):
         app.apply_step(self.conn, item_id, "verify", "pass", "확인자")
         app.apply_step(self.conn, item_id, "confirm", "pass", "컨펌자")
 
+
+
+class LogicTest(_Base):
     def test_checklist_created(self):
         items = self.items()
         self.assertEqual(len(items), 25)
@@ -107,6 +110,108 @@ class LogicTest(unittest.TestCase):
             app.apply_step(self.conn, optional["id"], "install", "pass", "A")
 
 
+class CycleTest(_Base):
+    """개조 → 점검 → 광주 출고 → 고장 → 점검 → (개조) → 출고 사이클."""
+
+    def release(self):
+        for i in self.items():
+            if i["required"] and i["state"] != "confirmed":
+                if i["state"] in ("pending", "rework"):
+                    app.apply_step(self.conn, i["id"], "install", "pass", "설치자")
+                if self.items()[i["seq"]]["state"] == "installed":
+                    app.apply_step(self.conn, i["id"], "verify", "pass", "확인자")
+                app.apply_step(self.conn, i["id"], "confirm", "pass", "컨펌자")
+        app.handover(self.conn, self.vid, "우리팀")
+
+    def stage(self):
+        return app.get_vehicle(self.conn, self.vid)["stage"]
+
+    def test_fault_only_after_release(self):
+        with self.assertRaises(app.StepError):
+            app.report_fault(self.conn, self.vid, "운영", "카메라 영상 끊김")
+        self.release()
+        with self.assertRaises(app.StepError):
+            app.report_fault(self.conn, self.vid, "운영", "")
+        app.report_fault(self.conn, self.vid, "운영", "카메라 영상 끊김")
+        self.assertEqual(self.stage(), "broken")
+        v = app.get_vehicle(self.conn, self.vid)
+        self.assertIsNone(v["handover_at"])
+        self.assertEqual(v["fault_reason"], "카메라 영상 끊김")
+
+    def test_steps_blocked_while_broken(self):
+        self.release()
+        app.report_fault(self.conn, self.vid, "운영", "고장")
+        with self.assertRaises(app.StepError):
+            app.apply_step(self.conn, self.first_item(), "verify", "pass", "X")
+        with self.assertRaises(app.StepError):
+            app.handover(self.conn, self.vid, "우리팀")
+
+    def test_recheck_validation(self):
+        with self.assertRaises(app.StepError):
+            app.start_recheck(self.conn, self.vid, "점검자", [self.first_item()])
+        self.release()
+        app.report_fault(self.conn, self.vid, "운영", "고장")
+        with self.assertRaises(app.StepError):
+            app.start_recheck(self.conn, self.vid, "점검자", [])
+        with self.assertRaises(app.StepError):
+            app.start_recheck(self.conn, self.vid, "점검자", [99999])
+        optional = [i for i in self.items() if not i["required"]][0]
+        with self.assertRaises(app.StepError):
+            app.start_recheck(self.conn, self.vid, "점검자", [optional["id"]])
+
+    def test_fault_recheck_pass_then_release(self):
+        """고장 → 점검 합격 → 바로 출고 (개조 생략)."""
+        self.release()
+        app.report_fault(self.conn, self.vid, "운영", "카메라 1 영상 없음")
+        iid = self.first_item()
+        r = app.start_recheck(self.conn, self.vid, "점검자", [iid])
+        self.assertEqual(r["cycle"], 2)
+        self.assertEqual(self.stage(), "verifying")
+        item = self.items()[0]
+        self.assertEqual(item["state"], "installed")
+        self.assertEqual(item["events"][-1]["step"], "recheck")
+        # 다른 항목은 컨펌 상태 유지
+        self.assertEqual(self.items()[1]["state"], "confirmed")
+        app.apply_step(self.conn, iid, "verify", "pass", "확인자2")
+        app.apply_step(self.conn, iid, "confirm", "pass", "컨펌자2")
+        self.assertEqual(self.stage(), "ready")
+        app.handover(self.conn, self.vid, "우리팀")
+        kinds = [h["kind"] for h in app.get_vehicle(self.conn, self.vid)["history"]]
+        self.assertEqual(kinds, ["release", "fault", "recheck", "release"])
+
+    def test_fault_recheck_fail_goes_back_to_modify(self):
+        """고장 → 점검 불합격 → 재개조 → 점검 → 출고."""
+        self.release()
+        app.report_fault(self.conn, self.vid, "운영", "라이다 1 데이터 없음")
+        iid = self.items()[8]["id"]
+        app.start_recheck(self.conn, self.vid, "점검자", [iid])
+        app.apply_step(self.conn, iid, "verify", "fail", "확인자2", "커넥터 파손")
+        self.assertEqual(self.stage(), "rework")
+        app.apply_step(self.conn, iid, "install", "pass", "설치자2")
+        app.apply_step(self.conn, iid, "verify", "pass", "확인자2")
+        app.apply_step(self.conn, iid, "confirm", "pass", "컨펌자2")
+        app.handover(self.conn, self.vid, "우리팀")
+        self.assertEqual(self.stage(), "handed_over")
+        # 두 번째 고장도 가능 (사이클 반복)
+        app.report_fault(self.conn, self.vid, "운영", "재발")
+        app.start_recheck(self.conn, self.vid, "점검자", [iid])
+        self.assertEqual(app.get_vehicle(self.conn, self.vid)["cycle"], 3)
+
+
+class MigrationTest(unittest.TestCase):
+    def test_old_db_upgraded(self):
+        with tempfile.TemporaryDirectory() as d:
+            db = str(Path(d) / "old.db")
+            with contextlib.closing(app.sqlite3.connect(db)) as c:
+                c.execute("CREATE TABLE vehicles (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL,"
+                          " created_at TEXT NOT NULL, handover_by TEXT, handover_at TEXT)")
+                c.execute("INSERT INTO vehicles (name, created_at) VALUES ('1호차', 'x')")
+                c.commit()
+            app.init_db(db)
+            with contextlib.closing(app.connect(db)) as c:
+                self.assertEqual(c.execute("SELECT cycle FROM vehicles").fetchone()[0], 1)
+
+
 class HttpTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -149,6 +254,8 @@ class HttpTest(unittest.TestCase):
         self.assertIn("설치자", err["error"])
         self.assertEqual(self.call("/api/vehicles/1/handover", {"person": "우리팀"})[0], 400)
         self.assertEqual(self.call("/api/vehicles/999")[0], 404)
+        self.assertEqual(self.call("/api/vehicles/1/fault", {"person": "운영", "reason": "x"})[0], 400)
+        self.assertEqual(self.call("/api/vehicles/1/recheck", {"person": "p", "item_ids": [iid]})[0], 400)
 
     def test_static_and_traversal(self):
         with contextlib.closing(urllib.request.urlopen(self.base + "/")) as r:
